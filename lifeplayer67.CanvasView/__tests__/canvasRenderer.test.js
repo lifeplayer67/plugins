@@ -2,7 +2,7 @@
 // @flow
 import { renderCanvasHTML, inlineJSON } from '../src/canvasRenderer'
 
-const client = require('../requiredFiles/canvasClient.js')
+const client = require('../requiredFiles/canvasCore.js')
 
 const sampleCanvas = {
   nodes: [
