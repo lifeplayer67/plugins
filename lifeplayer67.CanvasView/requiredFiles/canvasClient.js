@@ -1,4 +1,5 @@
-/* eslint-disable */
+/* eslint-disable no-var, prefer-template -- plain ES5 browser file, no build step */
+/* global sendMessageToPlugin */
 // -----------------------------------------------------------------------------
 // Canvas View — client engine. Runs inside the NotePlan HTML window.
 // Owns the canvas state, renders nodes/edges, handles all interactions and
@@ -64,6 +65,9 @@
   var zoomLabel = document.getElementById('zoom-level')
   var svg = null
   var scale = 1, tx = 0, ty = 0
+
+  // groups activate only by their frame: hit margin in screen pixels
+  var GROUP_FRAME_PX = 14
 
   var selectedNodes = new Set()
   var selectedEdges = new Set()
@@ -537,18 +541,6 @@
     })
   }
 
-  /** Edit the underlying value of a file node ('file' path) or link node ('url') */
-  function editCardValue(el, prop) {
-    var n = nodeById[el.dataset.id]
-    prompt2(el, n[prop] || '', function (v) {
-      if (v === (n[prop] || '')) return
-      pushUndo()
-      n[prop] = v
-      renderScene()
-      persist()
-    }, true)
-  }
-
   /**
    * Link cards edit in a multiline textarea (Enter = newline, like text cards).
    * If the committed value is a bare URL the node stays a 'link'; anything richer
@@ -661,9 +653,9 @@
     })
   }
 
-  function prompt2(anchorEl, initial, onCommit, inset) {
+  function prompt2(anchorEl, initial, onCommit) {
     var input = document.createElement('input')
-    input.className = inset ? 'card-input' : 'label-input'
+    input.className = 'label-input'
     input.value = initial
     anchorEl.appendChild(input)
     setTimeout(function () { input.focus() }, 0)
@@ -852,7 +844,7 @@
         // background — a new text card appears right there, inside the group
         var gdp = toWorld(e.clientX, e.clientY)
         var gdn = nodeById[gEl.dataset.id]
-        if (e.target.closest('.group-label') || (gdn && isGroupBorderHit(gdn, gdp.x, gdp.y, 14 / scale))) editGroupLabel(gEl)
+        if (e.target.closest('.group-label') || (gdn && isGroupBorderHit(gdn, gdp.x, gdp.y, GROUP_FRAME_PX / scale))) editGroupLabel(gEl)
         else createTextNode(gdp.x, gdp.y)
         return
       }
@@ -888,7 +880,7 @@
     if (nodeEl && nodeEl.classList.contains('group') && !e.target.closest('.group-label') && !selectedNodes.has(nodeEl.dataset.id)) {
       var gp = toWorld(e.clientX, e.clientY)
       var gn = nodeById[nodeEl.dataset.id]
-      if (gn && !isGroupBorderHit(gn, gp.x, gp.y, 14 / scale)) {
+      if (gn && !isGroupBorderHit(gn, gp.x, gp.y, GROUP_FRAME_PX / scale)) {
         nodeEl = null
         interiorGroupClick = true
       }

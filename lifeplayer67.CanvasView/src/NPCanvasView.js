@@ -17,10 +17,16 @@ const PLUGIN_ID = pluginJson['plugin.id']
 // the path must stay inside the Notes folder and end in .canvas, with no extra '..'.
 const openedCanvasPaths: Set<string> = new Set()
 
+// All file access is relative to [NotePlan]/Plugins/data/<plugin-id>/ — these two
+// roots are the single source of truth for every path this plugin builds, and
+// isSafeCanvasPath's security check hangs off them.
+const APP_ROOT = '../../../'
+const NOTES_ROOT = `${APP_ROOT}Notes/`
+
 function isSafeCanvasPath(p: string): boolean {
-  if (!p.startsWith('../../../Notes/')) return false
+  if (!p.startsWith(NOTES_ROOT)) return false
   if (!p.toLowerCase().endsWith('.canvas')) return false
-  return !p.slice('../../../'.length).includes('..')
+  return !p.slice(APP_ROOT.length).includes('..')
 }
 
 /** One window/sidebar entry per canvas, so two canvases never fight over one pane */
@@ -48,8 +54,8 @@ const IMAGE_MIME: { [string]: string } = { png: 'image/png', jpg: 'image/jpeg', 
 
 /** Try to load an image referenced by a file node as a data URI (base64, ≤ ~2.5 MB) */
 function loadImageDataURI(filePath: string): ?string {
-  const candidates = [`../../../Notes/${filePath}`]
-  if (filePath.startsWith('Notes/')) candidates.push(`../../../${filePath}`)
+  const candidates = [`${NOTES_ROOT}${filePath}`]
+  if (filePath.startsWith('Notes/')) candidates.push(`${APP_ROOT}${filePath}`)
   for (const p of candidates) {
     const b64 = DataStore.loadData(p, false)
     if (b64 != null && b64 !== '' && b64.length < 3_500_000) {
@@ -73,7 +79,7 @@ function resolveCanvasPath(input: string, canvasFolder: string): string {
   const withExt = /\.canvas$/i.test(trimmed) ? trimmed : `${trimmed}.canvas`
   if (withExt.startsWith('/')) return `${'../'.repeat(12)}${withExt.slice(1)}`
   const folder = canvasFolder.replace(/^\/+|\/+$/g, '')
-  return folder === '' ? `../../../Notes/${withExt}` : `../../../Notes/${folder}/${withExt}`
+  return folder === '' ? `${NOTES_ROOT}${withExt}` : `${NOTES_ROOT}${folder}/${withExt}`
 }
 
 function loadCanvas(fullPath: string): ?TCanvasData {
@@ -90,6 +96,24 @@ function loadCanvas(fullPath: string): ?TCanvasData {
     logError(pluginJson, `loadCanvas: auto-repaired invalid JSON in '${fullPath}' (was: ${parseError.message})`)
     DataStore.saveData(cleaned, fullPath, true)
     return parsed
+  }
+}
+
+/** First project note with this exact title, or null */
+function findNoteByTitle(title: string): ?TNote {
+  const matches = DataStore.projectNoteByTitle(title) ?? []
+  return matches.length > 0 ? matches[0] : null
+}
+
+/** The one true shape of a NOTE_CONTENT reply to the window */
+async function noteContentPayload(id: any, title: string): Promise<Object> {
+  const note = findNoteByTitle(title)
+  return {
+    id,
+    found: note != null,
+    title,
+    content: note?.content ?? '',
+    html: note != null ? await noteContentHTML(note.content ?? '', note) : '',
   }
 }
 
@@ -129,7 +153,7 @@ export async function openCanvas(pathArg?: string): Promise<void> {
         const options = canvasNotes.map((n) => n.filename)
         const res = await CommandBar.showOptions(options, 'Open which canvas?')
         if (res == null) return
-        fullPath = `../../../Notes/${options[res.index]}`
+        fullPath = `${NOTES_ROOT}${options[res.index]}`
       } else {
         const answer = await CommandBar.textPrompt(
           'Canvas View',
@@ -164,7 +188,7 @@ export async function newCanvas(nameArg?: string): Promise<void> {
     const withExt = /\.canvas$/i.test(name) ? name : `${name}.canvas`
     const defaultFolder = settings.canvasFolder !== '' ? settings.canvasFolder.replace(/^\/+|\/+$/g, '') : 'Canvases'
     const relPath = withExt.includes('/') ? withExt : `${defaultFolder}/${withExt}`
-    const fullPath = `../../../Notes/${relPath}`
+    const fullPath = `${NOTES_ROOT}${relPath}`
     const existing = DataStore.loadData(fullPath, true)
     if (existing == null || existing === '') {
       const ok = DataStore.saveData(JSON.stringify({ nodes: [], edges: [] }, null, '\t'), fullPath, true)
@@ -215,15 +239,10 @@ async function showCanvasWindow(fullPath: string, settings: TSettings): Promise<
         continue
       }
       const noteTitle = (filePath.split('/').pop() ?? '').replace(/\.[^.]+$/, '')
-      const matches = DataStore.projectNoteByTitle(noteTitle) ?? []
+      const note = findNoteByTitle(noteTitle)
       fileContents[node.id] =
-        matches.length > 0
-          ? {
-              found: true,
-              title: noteTitle,
-              content: matches[0].content ?? '',
-              html: await noteContentHTML(matches[0].content ?? '', matches[0]),
-            }
+        note != null
+          ? { found: true, title: noteTitle, content: note.content ?? '', html: await noteContentHTML(note.content ?? '', note) }
           : { found: false, title: noteTitle }
     }
 
@@ -289,9 +308,9 @@ export async function onMessageFromHTMLView(actionType: string, data: any): Prom
       case 'saveNote': {
         const noteTitle = String(payload.title ?? '')
         const content = String(payload.content)
-        const matches = DataStore.projectNoteByTitle(noteTitle) ?? []
-        if (matches.length > 0) {
-          matches[0].content = content
+        const note = findNoteByTitle(noteTitle)
+        if (note != null) {
+          note.content = content
           logDebug(pluginJson, `saveNote: updated '${noteTitle}' (${content.length} chars)`)
         } else {
           // First write into a card whose note doesn't exist yet: create it
@@ -303,15 +322,7 @@ export async function onMessageFromHTMLView(actionType: string, data: any): Prom
       }
       case 'getNoteContent': {
         // The picker attached a card to a different note: send its content back
-        const noteTitle = String(payload.title ?? '')
-        const matches = DataStore.projectNoteByTitle(noteTitle) ?? []
-        await sendToHTMLWindow(windowIdFor(String(payload.path ?? '')), 'NOTE_CONTENT', {
-          id: payload.id,
-          found: matches.length > 0,
-          title: noteTitle,
-          content: matches.length > 0 ? matches[0].content ?? '' : '',
-          html: matches.length > 0 ? await noteContentHTML(matches[0].content ?? '', matches[0]) : '',
-        })
+        await sendToHTMLWindow(windowIdFor(String(payload.path ?? '')), 'NOTE_CONTENT', await noteContentPayload(payload.id, String(payload.title ?? '')))
         break
       }
       case 'setClipboard': {
@@ -325,14 +336,7 @@ export async function onMessageFromHTMLView(actionType: string, data: any): Prom
       case 'refreshNotes': {
         const windowId = windowIdFor(String(payload.path ?? ''))
         for (const item of payload.items ?? []) {
-          const matches = DataStore.projectNoteByTitle(String(item.title)) ?? []
-          await sendToHTMLWindow(windowId, 'NOTE_CONTENT', {
-            id: item.id,
-            found: matches.length > 0,
-            title: String(item.title),
-            content: matches.length > 0 ? matches[0].content ?? '' : '',
-            html: matches.length > 0 ? await noteContentHTML(matches[0].content ?? '', matches[0]) : '',
-          })
+          await sendToHTMLWindow(windowId, 'NOTE_CONTENT', await noteContentPayload(item.id, String(item.title)))
         }
         break
       }

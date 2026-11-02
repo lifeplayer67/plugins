@@ -1,4 +1,5 @@
-/* eslint-disable */
+/* eslint-disable no-var, prefer-template -- plain ES5 browser file, no build step */
+/* global showdown */
 // -----------------------------------------------------------------------------
 // Canvas View — core: pure helpers and markdown rendering. No DOM, no state —
 // everything here is unit-testable under Jest. Loaded in the window BEFORE
