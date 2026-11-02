@@ -1,5 +1,16 @@
 # Canvas View Changelog
 
+## [1.0.2] - 2026-11-02 (unreleased)
+
+- Security (QA pass): a javascript: url in a link card no longer renders a
+  clickable anchor (http/https only, same rule as the preview iframe);
+  geometry is clamped from above too (width/height <= 100000, |x|,|y| <= 1e7).
+- Successful JSON auto-repair now logs as a warning instead of an error.
+- Cleanup from code review: dead editCardValue/prompt2-inset/CSS rules removed,
+  targeted eslint pragmas (no-unused-vars active again), NOTES_ROOT constant
+  shared with the isSafeCanvasPath security check, findNoteByTitle and
+  noteContentPayload helpers deduplicate the server.
+
 ## [0.9.5] - 2026-09-25 (unreleased)
 
 - Markdown in cards is rendered by showdown (the converter NotePlan's own helpers

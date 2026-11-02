@@ -149,9 +149,13 @@
       else body = '<div class="content file-missing">No such note in NotePlan yet.<br>Double-click to write it (the note gets created).<br>Double-click the header to pick another.</div>'
       inner = '<div class="file-head"><span>📄</span> <span class="fh-name">' + escapeHtml(base) + '</span><span class="open-btn" title="Open the note in NotePlan (or ⌘+click the card)">↗</span></div>' + body
     } else if (n.type === 'link') {
+      // SECURITY: only http(s) reaches the DOM — both the iframe AND the anchor
+      // (a javascript: url in a malicious .canvas must never become clickable)
       var url = String(n.url || '')
-      var frame = /^https?:\/\//.test(url) ? '<iframe class="web-frame" src="' + escapeHtml(url) + '" sandbox></iframe>' : ''
-      inner = '<div class="file-head"><span>🔗</span> <span class="fh-name">' + escapeHtml(url) + '</span><a class="open-btn ext-open" href="' + escapeHtml(url) + '" target="_blank" title="Open in browser">↗</a></div>' + frame
+      var isHttp = /^https?:\/\//i.test(url)
+      var frame = isHttp ? '<iframe class="web-frame" src="' + escapeHtml(url) + '" sandbox></iframe>' : ''
+      var openBtn = isHttp ? '<a class="open-btn ext-open" href="' + escapeHtml(url) + '" target="_blank" title="Open in browser">↗</a>' : ''
+      inner = '<div class="file-head"><span>🔗</span> <span class="fh-name">' + escapeHtml(url) + '</span>' + openBtn + '</div>' + frame
     }
     return '<div class="node ' + n.type + sel + '" data-id="' + escapeHtml(n.id) + '"' + extra + ' style="' + style + '">' + inner + anchors + '</div>'
   }
@@ -1126,7 +1130,7 @@
     }
   }
 
-  console.log('canvasClient v1.0.1 booted: ' + canvas.nodes.length + ' nodes, ' + canvas.edges.length + ' edges')
+  console.log('canvasClient v1.0.2 booted: ' + canvas.nodes.length + ' nodes, ' + canvas.edges.length + ' edges')
   renderScene()
   fit()
 })()

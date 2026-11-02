@@ -25,11 +25,14 @@
       v = Number(v)
       return isFinite(v) ? v : d
     }
+    function clamp(v, lo, hi) {
+      return Math.min(hi, Math.max(lo, v))
+    }
     ;(c.nodes || []).forEach(function (n) {
-      n.x = num(n.x, 0)
-      n.y = num(n.y, 0)
-      n.width = Math.max(10, num(n.width, 250))
-      n.height = Math.max(10, num(n.height, 60))
+      n.x = clamp(num(n.x, 0), -1e7, 1e7)
+      n.y = clamp(num(n.y, 0), -1e7, 1e7)
+      n.width = clamp(num(n.width, 250), 10, 100000)
+      n.height = clamp(num(n.height, 60), 10, 100000)
     })
     return c
   }

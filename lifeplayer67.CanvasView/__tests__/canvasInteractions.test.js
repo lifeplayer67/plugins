@@ -18,6 +18,9 @@ const FIXTURE = {
   edges: [{ id: 'e-ab', fromNode: 'a', toNode: 'b' }],
 }
 
+// malicious link card: must render with NO clickable anchor and NO iframe
+FIXTURE.nodes.push({ id: 'evil', type: 'link', url: 'javascript:alert(1)', x: 800, y: 0, width: 200, height: 100 })
+
 let api
 
 function mouse(type, target, opts = {}) {
@@ -199,6 +202,16 @@ describe('groups', () => {
     pressKey('Backspace')
     expect(api.getCanvas().nodes.length).toBe(before)
     clearSelection()
+  })
+})
+
+describe('security', () => {
+  test('a javascript: url in a link card gets no anchor and no iframe', () => {
+    const el = document.querySelector('.node[data-id="evil"]')
+    expect(el).not.toBeNull()
+    expect(el.querySelector('a')).toBeNull()
+    expect(el.querySelector('iframe')).toBeNull()
+    expect(el.textContent).toContain('javascript:alert(1)') // shown as inert text only
   })
 })
 

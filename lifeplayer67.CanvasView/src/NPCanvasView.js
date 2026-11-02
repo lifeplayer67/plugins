@@ -6,7 +6,7 @@
 import pluginJson from '../plugin.json'
 import { renderCanvasHTML, type TCanvasData } from './canvasRenderer'
 import { showHTMLV2, sendToHTMLWindow, getNoteContentAsHTML } from '@helpers/HTMLView'
-import { logDebug, logError, clo } from '@helpers/dev'
+import { logDebug, logWarn, logError, clo } from '@helpers/dev'
 import { showMessage } from '@helpers/userInput'
 
 const PLUGIN_ID = pluginJson['plugin.id']
@@ -93,7 +93,7 @@ function loadCanvas(fullPath: string): ?TCanvasData {
     // Strip garbage that sits OUTSIDE strings and retry before giving up.
     const cleaned = raw.replace(/([[{,]\s*)…\s*/g, '$1').replace(/[\u2028\u2029\u00A0\u200B\uFEFF]/g, ' ')
     const parsed = JSON.parse(cleaned) // still broken → throws to the caller's message
-    logError(pluginJson, `loadCanvas: auto-repaired invalid JSON in '${fullPath}' (was: ${parseError.message})`)
+    logWarn(pluginJson, `loadCanvas: auto-repaired invalid JSON in '${fullPath}' (was: ${parseError.message})`)
     DataStore.saveData(cleaned, fullPath, true)
     return parsed
   }

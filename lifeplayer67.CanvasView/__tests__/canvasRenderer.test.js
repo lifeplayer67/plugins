@@ -122,6 +122,11 @@ describe('canvasClient pure helpers', () => {
     expect(c.nodes[0].y).toBe(0)
     expect(c.nodes[0].width).toBeGreaterThanOrEqual(10)
     expect(c.nodes[0].height).toBeGreaterThanOrEqual(10)
+    const huge = { nodes: [{ id: 'y', type: 'text', x: 1e308, y: -1e308, width: 1e308, height: 1e308 }] }
+    client.sanitizeCanvas(huge)
+    expect(huge.nodes[0].width).toBeLessThanOrEqual(100000)
+    expect(huge.nodes[0].x).toBeLessThanOrEqual(1e7)
+    expect(huge.nodes[0].y).toBeGreaterThanOrEqual(-1e7)
   })
 
   test('genId makes 16-char hex ids like Obsidian', () => {
