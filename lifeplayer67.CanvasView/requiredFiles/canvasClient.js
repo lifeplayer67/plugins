@@ -13,8 +13,25 @@
   var PRESET_COLORS = { 1: '#e93147', 2: '#ec7500', 3: '#e0ac00', 4: '#08b94e', 5: '#00bfbc', 6: '#7852ee' }
 
   function resolveColor(c, fallback) {
+    // SECURITY: colors land inside style/SVG attributes — only presets or #hex pass
     if (!c) return fallback || '#8a8a8a'
-    return PRESET_COLORS[c] || c
+    if (PRESET_COLORS[c]) return PRESET_COLORS[c]
+    return /^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? String(c) : fallback || '#8a8a8a'
+  }
+
+  /** SECURITY: geometry lands inside style/SVG attributes — coerce to finite numbers */
+  function sanitizeCanvas(c) {
+    function num(v, d) {
+      v = Number(v)
+      return isFinite(v) ? v : d
+    }
+    ;(c.nodes || []).forEach(function (n) {
+      n.x = num(n.x, 0)
+      n.y = num(n.y, 0)
+      n.width = Math.max(10, num(n.width, 250))
+      n.height = Math.max(10, num(n.height, 60))
+    })
+    return c
   }
 
   function escapeHtml(str) {
@@ -137,10 +154,14 @@
     nearestSide: nearestSide,
     nodeInsideGroup: nodeInsideGroup,
     isGroupBorderHit: isGroupBorderHit,
+    sanitizeCanvas: sanitizeCanvas,
     genId: genId,
     filterNotes: filterNotes,
   }
-  if (typeof module !== 'undefined' && module.exports) {
+  // Under Node/Jest export the pure helpers and stop — unless a test asked for the
+  // full browser boot (jsdom) by setting window.__CANVAS_TEST__ before require()
+  var isBrowserTest = typeof window !== 'undefined' && window.__CANVAS_TEST__ === true
+  if (typeof module !== 'undefined' && module.exports && !isBrowserTest) {
     module.exports = pure
     return
   }
@@ -150,6 +171,7 @@
   var canvas = window.__canvas || { nodes: [], edges: [] }
   if (!canvas.nodes) canvas.nodes = []
   if (!canvas.edges) canvas.edges = []
+  sanitizeCanvas(canvas)
   var canvasPath = window.__canvasPath
   var fileContents = window.__fileContents || {}
   var noteIndex = window.__noteIndex || []
@@ -166,6 +188,9 @@
       pasteSnippet(String(data.text || ''))
     }
   }
+
+  // CSS.escape is missing in jsdom (tests); ids are hex/simple so the fallback is safe
+  var cssEscape = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape : function (s) { return String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&') }
 
   var viewport = document.getElementById('viewport')
   var world = document.getElementById('world')
@@ -208,6 +233,7 @@
     canvas = JSON.parse(json)
     if (!canvas.nodes) canvas.nodes = []
     if (!canvas.edges) canvas.edges = []
+    sanitizeCanvas(canvas)
     selectedNodes.clear()
     selectedEdges.clear()
     renderScene()
@@ -254,7 +280,7 @@
       inner = '<div class="file-head"><span>📄</span> <span class="fh-name">' + escapeHtml(base) + '</span><span class="open-btn" title="Open the note in NotePlan (or ⌘+click the card)">↗</span></div>' + body
     } else if (n.type === 'link') {
       var url = String(n.url || '')
-      var frame = /^https?:\/\//.test(url) ? '<iframe class="web-frame" src="' + escapeHtml(url) + '" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>' : ''
+      var frame = /^https?:\/\//.test(url) ? '<iframe class="web-frame" src="' + escapeHtml(url) + '" sandbox></iframe>' : ''
       inner = '<div class="file-head"><span>🔗</span> <span class="fh-name">' + escapeHtml(url) + '</span><a class="open-btn ext-open" href="' + escapeHtml(url) + '" target="_blank" title="Open in browser">↗</a></div>' + frame
     }
     return '<div class="node ' + n.type + sel + '" data-id="' + escapeHtml(n.id) + '"' + extra + ' style="' + style + '">' + inner + anchors + '</div>'
@@ -427,6 +453,7 @@
     var snippet
     try { snippet = JSON.parse(text) } catch (e) { return }
     if (!snippet || !Array.isArray(snippet.nodes) || !snippet.nodes.length) return
+    sanitizeCanvas(snippet)
     pushUndo()
     var xs = snippet.nodes.map(function (n) { return n.x }), ys = snippet.nodes.map(function (n) { return n.y })
     var x2 = snippet.nodes.map(function (n) { return n.x + n.width }), y2 = snippet.nodes.map(function (n) { return n.y + n.height })
@@ -501,7 +528,7 @@
   function placeHandles() {
     if (selectedNodes.size !== 1) return
     var id = selectedNodes.values().next().value
-    var el = world.querySelector('.node[data-id="' + CSS.escape(id) + '"]')
+    var el = world.querySelector('.node[data-id="' + cssEscape(id) + '"]')
     if (!el) return
     HANDLES.forEach(function (h) {
       var d = document.createElement('div')
@@ -529,7 +556,7 @@
     if (h.indexOf('n') >= 0 && h !== 'ne' && h !== 'nw') { r.node.y = Math.round(Math.min(r.oy + dy, r.oy + r.oh - MIN)); r.node.height = Math.round(Math.max(MIN, r.oh - dy)) }
     if (h === 'ne' || h === 'nw') { r.node.y = Math.round(Math.min(r.oy + dy, r.oy + r.oh - MIN)); r.node.height = Math.round(Math.max(MIN, r.oh - dy)) }
     if (h.indexOf('s') >= 0) { r.node.height = Math.round(Math.max(MIN, r.oh + dy)) }
-    var el = world.querySelector('.node[data-id="' + CSS.escape(r.node.id) + '"]')
+    var el = world.querySelector('.node[data-id="' + cssEscape(r.node.id) + '"]')
     el.style.left = r.node.x + 'px'
     el.style.top = r.node.y + 'px'
     el.style.width = r.node.width + 'px'
@@ -805,7 +832,7 @@
     selectedNodes.add(n.id)
     renderScene()
     persist()
-    var el = world.querySelector('.node[data-id="' + CSS.escape(n.id) + '"]')
+    var el = world.querySelector('.node[data-id="' + cssEscape(n.id) + '"]')
     if (!el) return
     if (kind === 'text') editTextNode(el)
     else if (kind === 'file') openNotePicker(el)
@@ -900,7 +927,7 @@
     selectedNodes.add(g.id)
     renderScene()
     persist()
-    var el = world.querySelector('.node[data-id="' + CSS.escape(g.id) + '"]')
+    var el = world.querySelector('.node[data-id="' + cssEscape(g.id) + '"]')
     if (el) editGroupLabel(el)
   }
 
@@ -1070,7 +1097,7 @@
       dragNodes.forEach(function (d) {
         d.node.x = Math.round(d.ox + (e.clientX - pxStart) / scale)
         d.node.y = Math.round(d.oy + (e.clientY - pyStart) / scale)
-        var el = world.querySelector('.node[data-id="' + CSS.escape(d.node.id) + '"]')
+        var el = world.querySelector('.node[data-id="' + cssEscape(d.node.id) + '"]')
         if (el) { el.style.left = d.node.x + 'px'; el.style.top = d.node.y + 'px' }
       })
       drawEdges()
@@ -1102,7 +1129,7 @@
     if (mode === 'place') {
       if (ghostEl) ghostEl.remove()
       ghostEl = null
-      if (moved && !e.target.closest('#palette')) {
+      if (moved && !(e.target && e.target.closest && e.target.closest('#palette'))) {
         var wp = toWorld(e.clientX, e.clientY)
         createNode(placeKind, wp.x, wp.y)
       } else if (!moved) {
@@ -1128,14 +1155,14 @@
           }
           if (n.x < w2.x && n.x + n.width > w1.x && n.y < w2.y && n.y + n.height > w1.y) selectedNodes.add(n.id)
         })
-      } else if (interiorGroupClick || !e.target.closest('.node, a, #toolbar, #palette, .edge-hit, .edge-line')) {
+      } else if (interiorGroupClick || !(e.target && e.target.closest && e.target.closest('.node, a, #toolbar, #palette, .edge-hit, .edge-line'))) {
         clearSelection() // plain click on the background (or a group's interior) deselects
       }
       marqueeEl.remove()
       marqueeEl = null
       updateSelectionUI()
     }
-    if (mode === 'pan' && !moved && !e.target.closest('.node, a, #toolbar, .edge-hit, .edge-line')) {
+    if (mode === 'pan' && !moved && !(e.target && e.target.closest && e.target.closest('.node, a, #toolbar, .edge-hit, .edge-line'))) {
       clearSelection()
       updateSelectionUI()
     }
@@ -1231,7 +1258,17 @@
   window.addEventListener('resize', fit)
 
   // ---------- boot ----------
-  console.log('canvasClient v0.9.5 booted: ' + canvas.nodes.length + ' nodes, ' + canvas.edges.length + ' edges')
+  // test hook: lets jsdom interaction tests inspect and drive the live state
+  if (isBrowserTest) {
+    window.__canvasTestAPI = {
+      getCanvas: function () { return canvas },
+      selectedNodes: selectedNodes,
+      selectedEdges: selectedEdges,
+      getTransform: function () { return { scale: scale, tx: tx, ty: ty } },
+    }
+  }
+
+  console.log('canvasClient v1.0.0 booted: ' + canvas.nodes.length + ' nodes, ' + canvas.edges.length + ' edges')
   renderScene()
   fit()
 })()

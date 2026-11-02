@@ -109,6 +109,21 @@ describe('canvasClient pure helpers', () => {
     expect(client.isGroupBorderHit(g, 250, 200, 14)).toBe(false) // deep interior
   })
 
+  test('resolveColor rejects non-hex junk (style/SVG injection guard)', () => {
+    expect(client.resolveColor('red;} </style><script>', '#fff')).toEqual('#fff')
+    expect(client.resolveColor('url(javascript:1)', '#fff')).toEqual('#fff')
+    expect(client.resolveColor('#AABBCCDD')).toEqual('#AABBCCDD')
+  })
+
+  test('sanitizeCanvas coerces geometry to finite numbers (attribute injection guard)', () => {
+    const c = { nodes: [{ id: 'x', type: 'text', x: '10" onload="alert(1)', y: NaN, width: 'huge', height: -5 }] }
+    client.sanitizeCanvas(c)
+    expect(c.nodes[0].x).toBe(0)
+    expect(c.nodes[0].y).toBe(0)
+    expect(c.nodes[0].width).toBeGreaterThanOrEqual(10)
+    expect(c.nodes[0].height).toBeGreaterThanOrEqual(10)
+  })
+
   test('genId makes 16-char hex ids like Obsidian', () => {
     expect(client.genId()).toMatch(/^[0-9a-f]{16}$/)
   })

@@ -11,6 +11,18 @@ import { showMessage } from '@helpers/userInput'
 
 const PLUGIN_ID = pluginJson['plugin.id']
 
+// SECURITY: saveCanvas must never write outside the canvases this plugin opened.
+// Primary check: the exact path was registered by showCanvasWindow this session.
+// Fallback (e.g. a pane restored after an app restart, where module state is fresh):
+// the path must stay inside the Notes folder and end in .canvas, with no extra '..'.
+const openedCanvasPaths: Set<string> = new Set()
+
+function isSafeCanvasPath(p: string): boolean {
+  if (!p.startsWith('../../../Notes/')) return false
+  if (!p.toLowerCase().endsWith('.canvas')) return false
+  return !p.slice('../../../'.length).includes('..')
+}
+
 /** One window/sidebar entry per canvas, so two canvases never fight over one pane */
 function windowIdFor(fullPath: string): string {
   return `${PLUGIN_ID}.${fullPath.split('/').pop() ?? 'main'}`
@@ -174,6 +186,7 @@ export async function newCanvas(nameArg?: string): Promise<void> {
 async function showCanvasWindow(fullPath: string, settings: TSettings): Promise<void> {
   try {
     logDebug(pluginJson, `showCanvasWindow: loading '${fullPath}'`)
+    openedCanvasPaths.add(fullPath)
 
     let canvas: ?TCanvasData
     try {
@@ -259,10 +272,18 @@ export async function onMessageFromHTMLView(actionType: string, data: any): Prom
     logDebug(pluginJson, `onMessageFromHTMLView: '${action}'`)
     switch (action) {
       case 'saveCanvas': {
+        const savePath = String(payload.path ?? '')
+        if (!openedCanvasPaths.has(savePath)) {
+          if (!isSafeCanvasPath(savePath)) {
+            logError(pluginJson, `saveCanvas: refused write to unapproved path '${savePath}'`)
+            break
+          }
+          logDebug(pluginJson, `saveCanvas: path '${savePath}' not in session registry but canvas-safe — accepting (restored pane?)`)
+        }
         const jsonStr = String(payload.json)
         JSON.parse(jsonStr) // validate before touching the file — never write a broken canvas
-        const ok = DataStore.saveData(jsonStr, payload.path, true)
-        if (!ok) logError(pluginJson, `saveCanvas: saveData failed for '${payload.path}'`)
+        const ok = DataStore.saveData(jsonStr, savePath, true)
+        if (!ok) logError(pluginJson, `saveCanvas: saveData failed for '${savePath}'`)
         break
       }
       case 'saveNote': {
